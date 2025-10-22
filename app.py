@@ -105,16 +105,45 @@ def main():
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.subheader("📷 Video Feed")
-        video_placeholder = st.empty()
+        st.subheader("📷 Camera Feed")
         
         # Display current status
-        status_container = st.container()
-        with status_container:
-            if st.session_state.is_running:
-                st.success("🟢 Detection Active")
-            else:
-                st.info("🔴 Detection Stopped")
+        if st.session_state.is_running:
+            st.success("🟢 Detection Active")
+        else:
+            st.info("🔴 Detection Stopped - Click Start/Stop Detection to begin")
+        
+        # Camera input for Sign to Speech mode
+        if camera_enabled and st.session_state.current_mode == "Sign to Speech":
+            st.info("👋 Make a gesture in front of your camera")
+            
+            # Use camera input to capture frames
+            camera_photo = st.camera_input(
+                "Webcam Feed",
+                key="camera_feed",
+                disabled=not st.session_state.is_running
+            )
+            
+            if camera_photo and st.session_state.is_running:
+                # Process the captured frame
+                process_camera_frame(camera_photo, confidence_threshold)
+        
+        elif st.session_state.current_mode == "Speech to Sign":
+            st.info("🎤 Use the 'Listen for Speech' button in the sidebar to speak")
+            
+            # Display the recognized text as visual gestures
+            if st.session_state.translation_output:
+                st.markdown("### 📝 Recognized Gestures:")
+                words = st.session_state.translation_output.lower().split()
+                
+                # Show gesture visualization
+                gesture_cols = st.columns(min(len(words), 4))
+                for idx, word in enumerate(words[:12]):  # Limit to 12 words
+                    col_idx = idx % 4
+                    with gesture_cols[col_idx]:
+                        st.markdown(f"**{word}**")
+                        # You could add gesture images/animations here
+                        st.caption(f"Gesture: {word}")
     
     with col2:
         st.subheader("📝 Translation Output")
@@ -153,127 +182,72 @@ def main():
                     st.text(f"{i+1}. {gesture['gesture']} ({gesture['confidence']:.2f})")
             else:
                 st.info("No gestures detected yet")
-    
-    # Video processing loop
-    if camera_enabled and st.session_state.is_running:
-        process_video_feed(video_placeholder, confidence_threshold)
 
-def process_video_feed(video_placeholder, confidence_threshold):
-    """Process video feed and perform gesture recognition"""
-    
-    # Initialize camera
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        st.error("❌ Could not open camera. Please check your camera connection.")
-        return
-    
-    # Set camera properties
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 30)
-    
-    frame_count = 0
-    gesture_sequence = []
+def process_camera_frame(camera_photo, confidence_threshold):
+    """Process a single frame from camera input and perform gesture recognition"""
     
     try:
-        while st.session_state.is_running:
-            ret, frame = cap.read()
-            if not ret:
-                st.error("❌ Failed to read from camera")
-                break
+        # Convert uploaded photo to OpenCV format
+        from PIL import Image
+        import io
+        
+        # Read the image
+        image = Image.open(camera_photo)
+        
+        # Convert PIL image to numpy array
+        frame = np.array(image)
+        
+        # Convert RGB to BGR for OpenCV
+        if len(frame.shape) == 3 and frame.shape[2] == 3:
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        
+        # Process frame for hand tracking
+        hand_landmarks = st.session_state.hand_tracker.process_frame(frame)
+        
+        if hand_landmarks:
+            # Draw hand landmarks
+            annotated_frame = st.session_state.hand_tracker.draw_landmarks(
+                frame, hand_landmarks
+            )
             
-            # Flip frame horizontally for mirror effect
-            frame = cv2.flip(frame, 1)
+            # Extract features for gesture recognition (single hand for simplicity)
+            features = st.session_state.hand_tracker.extract_single_hand_features(hand_landmarks)
             
-            # Process frame for hand tracking
-            hand_landmarks = st.session_state.hand_tracker.process_frame(frame)
-            
-            if hand_landmarks:
-                # Draw hand landmarks
-                annotated_frame = st.session_state.hand_tracker.draw_landmarks(
-                    frame, hand_landmarks
+            if features is not None:
+                # Static gesture recognition (CNN)
+                static_prediction = st.session_state.gesture_recognizer.predict_static_gesture(
+                    features, confidence_threshold
                 )
                 
-                # Extract features for gesture recognition
-                features = st.session_state.hand_tracker.extract_features(hand_landmarks)
-                
-                if features is not None:
-                    # Static gesture recognition (CNN)
-                    static_prediction = st.session_state.gesture_recognizer.predict_static_gesture(
-                        features, confidence_threshold
-                    )
+                if static_prediction:
+                    gesture_name, confidence = static_prediction
                     
-                    if static_prediction:
-                        gesture_name, confidence = static_prediction
-                        
-                        # Add to gesture history
-                        gesture_entry = {
-                            'gesture': gesture_name,
-                            'confidence': confidence,
-                            'timestamp': time.time()
-                        }
-                        st.session_state.gesture_history.append(gesture_entry)
-                        
-                        # Update translation output for Sign to Speech mode
-                        if st.session_state.current_mode == "Sign to Speech":
-                            # Build sentence from recent gestures
-                            recent_gestures = [g['gesture'] for g in st.session_state.gesture_history[-5:]]
-                            sentence = st.session_state.nlp_cleaner.build_sentence(recent_gestures)
-                            st.session_state.translation_output = sentence
-                        
-                        # Draw gesture label on frame
-                        cv2.putText(
-                            annotated_frame,
-                            f"{gesture_name} ({confidence:.2f})",
-                            (10, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            1,
-                            (0, 255, 0),
-                            2
-                        )
+                    # Add to gesture history
+                    gesture_entry = {
+                        'gesture': gesture_name,
+                        'confidence': confidence,
+                        'timestamp': time.time()
+                    }
+                    st.session_state.gesture_history.append(gesture_entry)
                     
-                    # Collect sequence for LSTM
-                    gesture_sequence.append(features)
-                    if len(gesture_sequence) > 30:  # Keep last 30 frames
-                        gesture_sequence.pop(0)
+                    # Update translation output for Sign to Speech mode
+                    if st.session_state.current_mode == "Sign to Speech":
+                        # Build sentence from recent gestures
+                        recent_gestures = [g['gesture'] for g in st.session_state.gesture_history[-5:]]
+                        sentence = st.session_state.nlp_cleaner.build_sentence(recent_gestures)
+                        st.session_state.translation_output = sentence
                     
-                    # Dynamic gesture recognition (LSTM) every 10 frames
-                    if frame_count % 10 == 0 and len(gesture_sequence) >= 15:
-                        dynamic_prediction = st.session_state.gesture_recognizer.predict_dynamic_gesture(
-                            gesture_sequence, confidence_threshold
-                        )
-                        
-                        if dynamic_prediction:
-                            dynamic_gesture, confidence = dynamic_prediction
-                            cv2.putText(
-                                annotated_frame,
-                                f"Dynamic: {dynamic_gesture} ({confidence:.2f})",
-                                (10, 70),
-                                cv2.FONT_HERSHEY_SIMPLEX,
-                                0.7,
-                                (255, 0, 0),
-                                2
-                            )
-            else:
-                annotated_frame = frame
-                # Clear gesture sequence when no hands detected
-                gesture_sequence = []
-            
-            # Convert frame for display
-            frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-            
-            # Display frame
-            video_placeholder.image(frame_rgb, channels="RGB", use_column_width=True)
-            
-            frame_count += 1
-            
-            # Small delay to prevent overwhelming the system
-            time.sleep(0.03)
+                    # Display detection result
+                    st.success(f"✅ Detected: {gesture_name} (Confidence: {confidence:.2%})")
+                else:
+                    st.warning("⚠️ Hand detected but confidence too low")
+        else:
+            st.warning("⚠️ No hands detected in the image")
             
     except Exception as e:
-        st.error(f"❌ Error during video processing: {str(e)}")
-    finally:
-        cap.release()
+        st.error(f"❌ Error processing camera frame: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
 
 if __name__ == "__main__":
     main()
