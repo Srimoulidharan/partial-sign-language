@@ -22,7 +22,14 @@ class SpeechProcessor:
         
         # Speech Recognition setup
         self.recognizer = sr.Recognizer()
-        self.microphone = sr.Microphone()
+        try:
+            self.microphone = sr.Microphone()
+            self.microphone_available = True
+        except Exception as e:
+            print(f"⚠️ Microphone initialization failed: {str(e)}")
+            print("   Speech-to-text will not be available")
+            self.microphone = None
+            self.microphone_available = False
         
         # Text-to-Speech setup
         self.use_gtts = use_gtts
@@ -82,6 +89,9 @@ class SpeechProcessor:
     
     def _calibrate_microphone(self):
         """Calibrate microphone for ambient noise"""
+        if not self.microphone_available or self.microphone is None:
+            return
+            
         try:
             with self.microphone as source:
                 print("🔧 Calibrating microphone for ambient noise...")
@@ -105,6 +115,10 @@ class SpeechProcessor:
         Returns:
             Recognized text or None if recognition failed
         """
+        if not self.microphone_available or self.microphone is None:
+            print("❌ Microphone not available for speech recognition")
+            return None
+            
         try:
             with self.microphone as source:
                 print("🎤 Listening for speech...")
