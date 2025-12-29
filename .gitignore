@@ -1,0 +1,29 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environments
+.local/
+.config/
+
+# IDE
+.vscode/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Models
+*.h5
+models/trained_models/
+
+# Datasets
+data/dataset/
+data/images/
+data/processed_wlasl/
+WLASL_v0.3.json
+
+# Media files
+*.mp4
+
+# OS files
+.DS_Store
