@@ -27,3 +27,8 @@ WLASL_v0.3.json
 
 # OS files
 .DS_Store
+.blackboxrules
+git add .gitignore
+git commit -m "Ignore local blackbox rules file"
+git push
+
