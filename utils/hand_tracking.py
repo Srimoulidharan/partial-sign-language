@@ -294,33 +294,98 @@ class HandTracker:
     def get_gesture_confidence(self, hand_landmarks) -> float:
         """
         Calculate a confidence score for the detected gesture
-        
+
         Args:
             hand_landmarks: Hand landmarks
-            
+
         Returns:
             Confidence score (0.0 to 1.0)
         """
         try:
             landmarks = hand_landmarks.landmark
-            
+
             # Calculate confidence based on landmark visibility and consistency
             visibility_scores = []
-            
+
             for landmark in landmarks:
                 # MediaPipe provides visibility score for each landmark
                 visibility = getattr(landmark, 'visibility', 1.0)
                 visibility_scores.append(visibility)
-            
+
             # Average visibility as confidence
             confidence = np.mean(visibility_scores)
-            
+
             return max(0.0, min(1.0, confidence))
-            
+
         except Exception as e:
+            print(f"❌ Error calculating confidence: {str(e)}")
             return 0.0
-    
+
+    def process_video_frames(self, video_path: str, max_frames: int = 100) -> List[np.ndarray]:
+        """
+        Process multiple frames from a video file for batch processing
+
+        Args:
+            video_path: Path to video file
+            max_frames: Maximum number of frames to process
+
+        Returns:
+            List of processed frames (BGR format)
+        """
+        frames = []
+        try:
+            cap = cv2.VideoCapture(video_path)
+            frame_count = 0
+
+            while cap.isOpened() and frame_count < max_frames:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                frames.append(frame.copy())
+                frame_count += 1
+
+            cap.release()
+            return frames
+
+        except Exception as e:
+            print(f"❌ Error processing video {video_path}: {str(e)}")
+            return []
+
+    def extract_batch_hand_features(self, frames: List[np.ndarray]) -> List[np.ndarray]:
+        """
+        Extract hand features from multiple frames in batch
+
+        Args:
+            frames: List of frames to process
+
+        Returns:
+            List of hand feature arrays (42-dim vectors)
+        """
+        batch_features = []
+
+        try:
+            for frame in frames:
+                # Process frame for hand landmarks
+                hand_landmarks_list = self.process_frame(frame)
+
+                if hand_landmarks_list:
+                    # Extract features from first hand
+                    features = self.extract_single_hand_features(hand_landmarks_list)
+                    if features is not None:
+                        batch_features.append(features)
+                else:
+                    # No hands detected, append zeros
+                    batch_features.append(np.zeros(42))
+
+            return batch_features
+
+        except Exception as e:
+            print(f"❌ Error in batch feature extraction: {str(e)}")
+            return []
+
     def cleanup(self):
+
         """Clean up MediaPipe resources"""
         try:
             if hasattr(self, 'hands'):

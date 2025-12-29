@@ -1,7 +1,6 @@
 """
 Gesture labels and mappings for the sign language recognition system
 """
-
 # Basic static gestures that can be recognized
 GESTURE_LABELS = [
     "hello",
@@ -120,7 +119,6 @@ TEXT_TO_GESTURE = {
     "sorry": "sorry",
     "love": "love",
     "peace": "peace",
-    
     # Common phrases
     "how are you": "how_are_you",
     "nice to meet you": "nice_to_meet_you",

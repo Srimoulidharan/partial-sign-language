@@ -164,47 +164,69 @@ class SpeechProcessor:
     def text_to_speech(self, text: str, async_mode: bool = False) -> bool:
         """
         Convert text to speech
-        
+
         Args:
             text: Text to convert to speech
             async_mode: Whether to run TTS in background
-            
+
         Returns:
             Success status
         """
         if not text or text.strip() == "":
+            print("⚠️ TTS: Empty text provided")
             return False
-        
+
         if async_mode:
             # Add to queue for background processing
             self.audio_queue.put(('tts', text))
             self._start_audio_thread()
+            print(f"✅ TTS queued asynchronously: '{text}'")
             return True
         else:
-            return self._synthesize_speech(text)
+            success = self._synthesize_speech(text)
+            if success:
+                print(f"✅ TTS completed synchronously: '{text}'")
+            else:
+                print(f"❌ TTS failed synchronously: '{text}'")
+            return success
     
     def _synthesize_speech(self, text: str) -> bool:
         """Internal method to synthesize speech"""
         try:
             if self.use_gtts:
-                return self._speak_with_gtts(text)
+                print(f"🔄 Attempting TTS with gTTS: '{text}'")
+                success = self._speak_with_gtts(text)
+                if success:
+                    print("✅ gTTS TTS successful")
+                else:
+                    print("❌ gTTS TTS failed")
+                return success
             else:
-                return self._speak_with_pyttsx3(text)
-                
+                print(f"🔄 Attempting TTS with pyttsx3: '{text}'")
+                success = self._speak_with_pyttsx3(text)
+                if success:
+                    print("✅ pyttsx3 TTS successful")
+                else:
+                    print("❌ pyttsx3 TTS failed, falling back to gTTS")
+                    # Fallback to gTTS if pyttsx3 fails
+                    self.use_gtts = True
+                    return self._speak_with_gtts(text)
+
         except Exception as e:
-            print(f"❌ Error in speech synthesis: {str(e)}")
+            print(f"❌ Unexpected error in speech synthesis: {str(e)}")
             return False
     
     def _speak_with_pyttsx3(self, text: str) -> bool:
         """Speak using pyttsx3"""
         try:
             if self.tts_engine is None:
+                print("❌ pyttsx3 TTS error: Engine not initialized")
                 return False
-            
+
             self.tts_engine.say(text)
             self.tts_engine.runAndWait()
             return True
-            
+
         except Exception as e:
             print(f"❌ pyttsx3 TTS error: {str(e)}")
             return False
@@ -214,28 +236,28 @@ class SpeechProcessor:
         try:
             # Create TTS object
             tts = gTTS(text=text, lang='en', slow=False)
-            
+
             # Save to temporary file
             with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
                 tts.save(temp_file.name)
                 temp_filename = temp_file.name
-            
+
             # Play audio file
             pygame.mixer.music.load(temp_filename)
             pygame.mixer.music.play()
-            
+
             # Wait for playback to complete
             while pygame.mixer.music.get_busy():
                 time.sleep(0.1)
-            
+
             # Clean up temporary file
             try:
                 os.unlink(temp_filename)
             except:
                 pass
-            
+
             return True
-            
+
         except Exception as e:
             print(f"❌ gTTS error: {str(e)}")
             return False
@@ -252,12 +274,17 @@ class SpeechProcessor:
             try:
                 # Get task from queue (blocking with timeout)
                 task_type, data = self.audio_queue.get(timeout=1.0)
-                
+
                 if task_type == 'tts':
-                    self._synthesize_speech(data)
-                
+                    print(f"🔄 Processing async TTS: '{data}'")
+                    success = self._synthesize_speech(data)
+                    if success:
+                        print("✅ Async TTS completed successfully")
+                    else:
+                        print("❌ Async TTS failed")
+
                 self.audio_queue.task_done()
-                
+
             except queue.Empty:
                 # No tasks in queue, continue
                 continue
